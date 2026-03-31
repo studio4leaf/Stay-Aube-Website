@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string (optional)
+    //   - role: string (required, 'user' or 'admin')
+    //   - createdAt: string (required)
+    //
+    // Collection: rooms
+    // Document ID: {roomId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - description: string (required)
+    //   - capacity: number (required)
+    //   - price: number (required)
+    //   - images: list of strings (required)
+    //
+    // Collection: reservations
+    // Document ID: {reservationId}
+    // Fields:
+    //   - id: string (required)
+    //   - userId: string (required)
+    //   - roomId: string (required)
+    //   - checkIn: string (required)
+    //   - checkOut: string (required)
+    //   - guests: number (required)
+    //   - options: list of strings (optional)
+    //   - status: string (required, 'pending', 'confirmed', 'cancelled')
+    //   - createdAt: string (required)
+    //   - totalPrice: number (required)
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "d.studio4leaf@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidList(list, maxSize) {
+      return list is list && list.size() <= maxSize;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['user', 'admin'] &&
+             data.createdAt is string && isValidDateString(data.createdAt) &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100));
+    }
+
+    function isValidRoom(data) {
+      return hasRequiredFields(['id', 'name', 'description', 'capacity', 'price', 'images']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.description is string && data.description.size() < 5000 &&
+             data.capacity is number && data.capacity > 0 &&
+             data.price is number && data.price >= 0 &&
+             isValidList(data.images, 20);
+    }
+
+    function isValidReservation(data) {
+      return hasRequiredFields(['id', 'userId', 'roomId', 'checkIn', 'checkOut', 'guests', 'status', 'createdAt', 'totalPrice']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.roomId is string && data.roomId.size() > 0 && data.roomId.size() < 100 &&
+             data.checkIn is string && isValidDateString(data.checkIn) &&
+             data.checkOut is string && isValidDateString(data.checkOut) &&
+             data.guests is number && data.guests > 0 &&
+             data.status in ['pending', 'confirmed', 'cancelled'] &&
+             data.createdAt is string && isValidDateString(data.createdAt) &&
+             data.totalPrice is number && data.totalPrice >= 0 &&
+             (!('options' in data) || isValidList(data.options, 10));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) &&
+                    ((isOwner(userId) && request.resource.data.role == 'user' && uidUnchanged()) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) &&
+                    ((isOwner(userId) && request.resource.data.role == resource.data.role && uidNotModified() && request.resource.data.createdAt == resource.data.createdAt) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidRoom(request.resource.data);
+      allow update: if isAdmin() && isValidRoom(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /reservations/{reservationId} {
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticated() && isValidReservation(request.resource.data) &&
+                    ((request.resource.data.userId == request.auth.uid && request.resource.data.status == 'pending') || isAdmin());
+      allow update: if isAuthenticated() && isValidReservation(request.resource.data) &&
+                    ((resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId &&
+                      request.resource.data.roomId == resource.data.roomId &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      request.resource.data.status == 'cancelled') || isAdmin());
+      allow delete: if isAdmin();
+    }
+  }
+}

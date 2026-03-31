@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID" },
+        "email": { "type": "string", "format": "email", "description": "The user's email address" },
+        "displayName": { "type": "string", "description": "The user's display name" },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "The user's role" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "A room available for booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The room's unique ID" },
+        "name": { "type": "string", "description": "The room's name" },
+        "description": { "type": "string", "description": "The room's description" },
+        "capacity": { "type": "number", "description": "Maximum number of guests" },
+        "price": { "type": "number", "description": "Price per night" },
+        "images": { "type": "array", "items": { "type": "string" }, "description": "URLs of room images" }
+      },
+      "required": ["id", "name", "description", "capacity", "price", "images"]
+    },
+    "Reservation": {
+      "title": "Reservation",
+      "description": "A booking made by a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The reservation's unique ID" },
+        "userId": { "type": "string", "description": "The ID of the user who made the booking" },
+        "roomId": { "type": "string", "description": "The ID of the booked room" },
+        "checkIn": { "type": "string", "format": "date-time", "description": "Check-in date" },
+        "checkOut": { "type": "string", "format": "date-time", "description": "Check-out date" },
+        "guests": { "type": "number", "description": "Number of guests" },
+        "options": { "type": "array", "items": { "type": "string" }, "description": "Additional options like BBQ" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"], "description": "Reservation status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the reservation was made" },
+        "totalPrice": { "type": "number", "description": "Total price of the reservation" }
+      },
+      "required": ["id", "userId", "roomId", "checkIn", "checkOut", "guests", "status", "createdAt", "totalPrice"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/Room" },
+      "description": "Available rooms"
+    },
+    "reservations/{reservationId}": {
+      "schema": { "$ref": "#/entities/Reservation" },
+      "description": "User reservations"
+    }
+  }
+}
